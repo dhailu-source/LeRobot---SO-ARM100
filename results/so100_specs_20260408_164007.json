@@ -1,0 +1,160 @@
+{
+  "timestamp": "2026-04-08T16:40:07.830631",
+  "robot_id": "my_awesome_follower_arm",
+  "port": "COM3",
+  "config": {
+    "port": "COM3",
+    "id": "my_awesome_follower_arm",
+    "no_calibrate": false,
+    "weights_kg": "",
+    "payload_settle_s": 1.0,
+    "repeatability_repeats": 10,
+    "repeatability_settle_s": 0.5,
+    "repeatability_target": "0,30,45,15,0,40",
+    "speed_delta_deg": 20.0,
+    "speed_window_s": 1.0,
+    "speed_sample_dt_s": 0.05,
+    "output_dir": "results"
+  },
+  "payload_test": {
+    "executed": false,
+    "reason": "no weights provided"
+  },
+  "repeatability_test": {
+    "executed": true,
+    "repeats": 10,
+    "target_pose": {
+      "shoulder_pan.pos": 0.0,
+      "shoulder_lift.pos": 30.0,
+      "elbow_flex.pos": 45.0,
+      "wrist_flex.pos": 15.0,
+      "wrist_roll.pos": 0.0,
+      "gripper.pos": 40.0
+    },
+    "mean_body_pos": {
+      "shoulder_pan.pos": 6.725274725274725,
+      "shoulder_lift.pos": 24.41318681318682,
+      "elbow_flex.pos": 41.53846153846154,
+      "wrist_flex.pos": 14.364835164835165,
+      "wrist_roll.pos": 0.44835164835164837
+    },
+    "std_body_pos": {
+      "shoulder_pan.pos": 15.684049225225294,
+      "shoulder_lift.pos": 0.5004043769936782,
+      "elbow_flex.pos": 0.5560048633263088,
+      "wrist_flex.pos": 0.027800243166315325,
+      "wrist_roll.pos": 0.16680145899789256
+    },
+    "samples": [
+      [
+        51.34065934065934,
+        22.98901098901099,
+        39.956043956043956,
+        14.285714285714286,
+        0.9230769230769231
+      ],
+      [
+        3.1648351648351647,
+        24.571428571428573,
+        41.714285714285715,
+        14.373626373626374,
+        0.3956043956043956
+      ],
+      [
+        1.6703296703296704,
+        24.571428571428573,
+        41.714285714285715,
+        14.373626373626374,
+        0.3956043956043956
+      ],
+      [
+        1.5824175824175823,
+        24.571428571428573,
+        41.714285714285715,
+        14.373626373626374,
+        0.3956043956043956
+      ],
+      [
+        1.5824175824175823,
+        24.571428571428573,
+        41.714285714285715,
+        14.373626373626374,
+        0.3956043956043956
+      ],
+      [
+        1.5824175824175823,
+        24.571428571428573,
+        41.714285714285715,
+        14.373626373626374,
+        0.3956043956043956
+      ],
+      [
+        1.5824175824175823,
+        24.571428571428573,
+        41.714285714285715,
+        14.373626373626374,
+        0.3956043956043956
+      ],
+      [
+        1.5824175824175823,
+        24.571428571428573,
+        41.714285714285715,
+        14.373626373626374,
+        0.3956043956043956
+      ],
+      [
+        1.5824175824175823,
+        24.571428571428573,
+        41.714285714285715,
+        14.373626373626374,
+        0.3956043956043956
+      ],
+      [
+        1.5824175824175823,
+        24.571428571428573,
+        41.714285714285715,
+        14.373626373626374,
+        0.3956043956043956
+      ]
+    ]
+  },
+  "speed_test": {
+    "executed": true,
+    "move_delta_deg": 20.0,
+    "move_window_s": 1.0,
+    "sample_dt_s": 0.05,
+    "joint_results": {
+      "shoulder_pan.pos": {
+        "start_pos": 1.5824175824175823,
+        "target_pos": 21.582417582417584,
+        "peak_velocity_deg_per_s": 113.17090335192307,
+        "n_samples": 17
+      },
+      "shoulder_lift.pos": {
+        "start_pos": 23.34065934065934,
+        "target_pos": 43.34065934065934,
+        "peak_velocity_deg_per_s": 69.7821404391085,
+        "n_samples": 17
+      },
+      "elbow_flex.pos": {
+        "start_pos": 38.989010989010985,
+        "target_pos": 58.989010989010985,
+        "peak_velocity_deg_per_s": 54.3987722594408,
+        "n_samples": 17
+      },
+      "wrist_flex.pos": {
+        "start_pos": 13.054945054945055,
+        "target_pos": 33.05494505494505,
+        "peak_velocity_deg_per_s": 91.50069044955384,
+        "n_samples": 17
+      },
+      "wrist_roll.pos": {
+        "start_pos": 0.3956043956043956,
+        "target_pos": 20.395604395604394,
+        "peak_velocity_deg_per_s": 115.30895241994301,
+        "n_samples": 17
+      }
+    },
+    "note": "Estimated from finite differences of observed positions."
+  }
+}

@@ -716,7 +716,20 @@ class LeRobotDataset(torch.utils.data.Dataset):
             # Check if cached dataset contains all requested episodes
             if not self._check_cached_episodes_sufficient():
                 raise FileNotFoundError("Cached dataset doesn't contain all requested episodes")
-        except (AssertionError, FileNotFoundError, NotADirectoryError):
+        except (AssertionError, FileNotFoundError, NotADirectoryError) as e:
+            # Local recordings / offline datasets: do not hit the Hub when data is on disk but the
+            # requested episode filter is wrong (e.g. only episode 0 exists, user asked for episode 1).
+            err_msg = str(e) if e else ""
+            if (
+                self.episodes is not None
+                and (self.root / INFO_PATH).is_file()
+                and "Cached dataset doesn't contain all requested episodes" in err_msg
+            ):
+                n_ep = self.meta.total_episodes
+                raise ValueError(
+                    f"Requested episode(s) {list(self.episodes)} not found under {self.root}. "
+                    f"This dataset has {n_ep} episode(s); valid indices are 0..{n_ep - 1}."
+                ) from e
             if is_valid_version(self.revision):
                 self.revision = get_safe_version(self.repo_id, self.revision)
             self.download(download_videos)

@@ -22,9 +22,12 @@ lerobot-replay \
     --robot.type=so100_follower \
     --robot.port=/dev/tty.usbmodem58760431541 \
     --robot.id=black \
+    --robot.use_degrees=true \
     --dataset.repo_id=aliberts/record-test \
     --dataset.episode=0
 ```
+
+For a dataset you recorded locally, pass `--dataset.root=/path/to/dataset` and use `--dataset.episode=0` for the first episode (then 1, 2, ...).
 
 Example replay with bimanual so100:
 ```shell
