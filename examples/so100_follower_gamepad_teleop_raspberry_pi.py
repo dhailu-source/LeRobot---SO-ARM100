@@ -1,23 +1,21 @@
 #!/usr/bin/env python
 """SO-100 gamepad teleop tuned for Raspberry Pi + Linux pygame + PS5 DualSense / DS4.
 
-Axis layout differs from typical Windows/SDL mappings: L2/R2 are often axes 2–3 and the
-right stick is axes 4–5. L2/R2 digital buttons are usually 6/7; those must not be treated
-as L1/R1 for wrist_roll.
+SDL/Linux can map the same controller two ways: right stick on axes 2,3 and triggers on 4,5
+(USB / gamepad mode), or the opposite (common Bluetooth hid). This script samples axes at
+startup to pick the mapping.
 
 For a Windows laptop, use so100_follower_gamepad_teleop.py instead.
 """
 
+from __future__ import annotations
+
 import argparse
+import statistics
 import time
 
 from lerobot.robots.so100_follower import SO100Follower, SO100FollowerConfig
 
-# pygame axis indices on Linux for DualSense / many DS4 hid drivers
-_RIGHT_STICK_X_AXIS = 4
-_RIGHT_STICK_Y_AXIS = 5
-_L2_TRIGGER_AXIS = 2
-_R2_TRIGGER_AXIS = 3
 _L2_TRIGGER_BUTTONS = [6]
 _R2_TRIGGER_BUTTONS = [7]
 
@@ -26,9 +24,57 @@ def clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
+def detect_axis_layout(pump, axis_raw, num_axes: int) -> tuple[str, int, int, int, int]:
+    """Return (layout_name, rs_x, rs_y, l2_axis, r2_axis).
+
+    sticks_on_45: L2/R2 on 2,3 (rest ~ -1), right stick on 4,5 (rest ~ 0).
+    sticks_on_23: right stick on 2,3, L2/R2 on 4,5.
+    """
+    if num_axes < 6:
+        return "sticks_on_45_fallback", 4, 5, 2, 3
+
+    samples: list[tuple[float, float, float, float]] = []
+    for _ in range(45):
+        pump()
+        samples.append(
+            (
+                axis_raw(2),
+                axis_raw(3),
+                axis_raw(4),
+                axis_raw(5),
+            )
+        )
+        time.sleep(0.004)
+
+    m2 = statistics.fmean(s[0] for s in samples)
+    m3 = statistics.fmean(s[1] for s in samples)
+    m4 = statistics.fmean(s[2] for s in samples)
+    m5 = statistics.fmean(s[3] for s in samples)
+
+    def trigger_like(v: float) -> bool:
+        return v < -0.35
+
+    def stick_like(v: float) -> bool:
+        return abs(v) < 0.45
+
+    pair_23_triggers = trigger_like(m2) and trigger_like(m3) and stick_like(m4) and stick_like(m5)
+    pair_45_triggers = stick_like(m2) and stick_like(m3) and trigger_like(m4) and trigger_like(m5)
+
+    if pair_23_triggers and not pair_45_triggers:
+        return "sticks_on_45", 4, 5, 2, 3
+    if pair_45_triggers and not pair_23_triggers:
+        return "sticks_on_23", 2, 3, 4, 5
+    # Ambiguous: pick whichever pair is more "trigger-like" (more negative average).
+    avg23 = (m2 + m3) * 0.5
+    avg45 = (m4 + m5) * 0.5
+    if avg23 < avg45:
+        return "sticks_on_45_heuristic", 4, 5, 2, 3
+    return "sticks_on_23_heuristic", 2, 3, 4, 5
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Control one SO-100 follower with a gamepad (Raspberry Pi / Linux PS controller layout)."
+        description="Control one SO-100 follower with a gamepad (Raspberry Pi / Linux PS controller)."
     )
     parser.add_argument("--port", default="/dev/ttyACM0", help="Serial port (default: /dev/ttyACM0).")
     parser.add_argument("--id", default="my_awesome_follower_arm", help="Robot id (calibration id).")
@@ -36,6 +82,18 @@ def main() -> None:
     parser.add_argument("--max_joint_speed_deg_s", type=float, default=90.0, help="Max body-joint speed.")
     parser.add_argument("--gripper_speed_unit_s", type=float, default=80.0, help="Max gripper speed in [0..100]/s.")
     parser.add_argument("--deadzone", type=float, default=0.12, help="Joystick deadzone.")
+    parser.add_argument(
+        "--gripper_deadzone",
+        type=float,
+        default=0.14,
+        help="Ignore analog trigger difference smaller than this (reduces drift / false open).",
+    )
+    parser.add_argument(
+        "--layout",
+        choices=("auto", "sticks_on_23", "sticks_on_45"),
+        default="auto",
+        help="Axis map: triggers on 4,5 vs 2,3. Use auto unless detection is wrong.",
+    )
     parser.add_argument(
         "--calib_margin_ratio",
         type=float,
@@ -83,29 +141,55 @@ def main() -> None:
 
     joystick = pygame.joystick.Joystick(0)
     joystick.init()
-    print(f"Using gamepad: {joystick.get_name()} (Raspberry Pi / Linux PS layout)")
-
-    print(
-        """
-SO-100 gamepad teleop (joint space):
-  Left stick:  shoulder_pan (X), shoulder_lift (Y)
-  Right stick: wrist_flex (X), elbow_flex (Y)
-  L1 / R1:     wrist_roll - / +
-  L2 / R2:     gripper close / open
-  Circle/B or Square/Cross:  exit (driver-dependent)
-"""
-    )
+    n_axes = joystick.get_numaxes()
 
     def axis_raw(index: int) -> float:
-        if index >= joystick.get_numaxes():
+        if index >= n_axes:
             return 0.0
         return float(joystick.get_axis(index))
 
-    center_axes = {0, 1, _RIGHT_STICK_X_AXIS, _RIGHT_STICK_Y_AXIS}
+    def pump() -> None:
+        pygame.event.pump()
+
+    for _ in range(5):
+        pump()
+        time.sleep(0.01)
+
+    if args.layout == "auto":
+        layout_name, rs_x, rs_y, l2_ax, r2_ax = detect_axis_layout(pump, axis_raw, n_axes)
+    elif args.layout == "sticks_on_23":
+        layout_name, rs_x, rs_y, l2_ax, r2_ax = "sticks_on_23_manual", 2, 3, 4, 5
+    else:
+        layout_name, rs_x, rs_y, l2_ax, r2_ax = "sticks_on_45_manual", 4, 5, 2, 3
+
+    print(f"Using gamepad: {joystick.get_name()} | layout={layout_name} | axes RS=({rs_x},{rs_y}) L2R2=({l2_ax},{r2_ax})")
+    print("Keep fingers off L2/R2 and the right stick for one second while axes are detected.")
+
+    # Resting values for trigger axes (for signed vs unsigned scaling).
+    l2_rest_samples: list[float] = []
+    r2_rest_samples: list[float] = []
+    for _ in range(25):
+        pump()
+        l2_rest_samples.append(axis_raw(l2_ax))
+        r2_rest_samples.append(axis_raw(r2_ax))
+        time.sleep(0.004)
+    l2_rest = statistics.fmean(l2_rest_samples)
+    r2_rest = statistics.fmean(r2_rest_samples)
+
+    def trigger_activation(axis_idx: int, rest: float) -> float:
+        raw = axis_raw(axis_idx)
+        # Signed triggers (DualSense): rest ~ -1, full press ~ +1
+        if rest < -0.25:
+            return (clamp(raw, -1.0, 1.0) + 1.0) * 0.5
+        # Unsigned 0..1: remove idle bias so a noisy rest value does not count as "open".
+        span = max(0.2, 1.0 - clamp(rest, 0.0, 0.95))
+        return clamp((raw - rest) / span, 0.0, 1.0)
+
+    center_axes = {0, 1, rs_x, rs_y}
     center = {i: 0.0 for i in center_axes}
     sample_count = 20
     for _ in range(sample_count):
-        pygame.event.pump()
+        pump()
         for axis_idx in center:
             center[axis_idx] += axis_raw(axis_idx)
         time.sleep(0.005)
@@ -123,14 +207,26 @@ SO-100 gamepad teleop (joint space):
                 return True
         return False
 
-    def trigger_value(axis_candidates: list[int], button_candidates: list[int]) -> float:
-        for axis_idx in axis_candidates:
-            if axis_idx < joystick.get_numaxes():
-                raw = float(joystick.get_axis(axis_idx))
-                return (raw + 1.0) * 0.5
-        if button_pressed(button_candidates):
-            return 1.0
-        return 0.0
+    def read_l2_r2() -> tuple[float, float]:
+        l_act = trigger_activation(l2_ax, l2_rest)
+        r_act = trigger_activation(r2_ax, r2_rest)
+        if button_pressed(_L2_TRIGGER_BUTTONS):
+            l_act = max(l_act, 1.0)
+        if button_pressed(_R2_TRIGGER_BUTTONS):
+            r_act = max(r_act, 1.0)
+        return l_act, r_act
+
+    print(
+        """
+SO-100 gamepad teleop (joint space):
+  Left stick:   shoulder_pan (X), shoulder_lift (Y)
+  Right stick Y: wrist_flex (vertical feels best on DualSense)
+  Right stick X: elbow_flex
+  L1 / R1:      wrist_roll - / +
+  L2 / R2:      gripper close / open
+  Exit:         Circle/B or Square/Cross (driver-dependent)
+"""
+    )
 
     joint_speed = float(args.max_joint_speed_deg_s)
     gripper_speed = float(args.gripper_speed_unit_s)
@@ -147,13 +243,13 @@ SO-100 gamepad teleop (joint space):
 
             lx = axis_value(0, args.deadzone)
             ly = axis_value(1, args.deadzone)
-            rx = axis_value(_RIGHT_STICK_X_AXIS, args.deadzone)
-            ry = axis_value(_RIGHT_STICK_Y_AXIS, args.deadzone)
+            rx = axis_value(rs_x, args.deadzone)
+            ry = axis_value(rs_y, args.deadzone)
 
             targets["shoulder_pan.pos"] = targets.get("shoulder_pan.pos", 0.0) + lx * joint_speed * dt
             targets["shoulder_lift.pos"] = targets.get("shoulder_lift.pos", 0.0) - ly * joint_speed * dt
-            targets["wrist_flex.pos"] = targets.get("wrist_flex.pos", 0.0) + rx * joint_speed * dt
-            targets["elbow_flex.pos"] = targets.get("elbow_flex.pos", 0.0) - ry * joint_speed * dt
+            targets["wrist_flex.pos"] = targets.get("wrist_flex.pos", 0.0) + ry * joint_speed * dt
+            targets["elbow_flex.pos"] = targets.get("elbow_flex.pos", 0.0) - rx * joint_speed * dt
 
             roll_dir = 0.0
             if button_pressed([4]):
@@ -162,9 +258,11 @@ SO-100 gamepad teleop (joint space):
                 roll_dir += 1.0
             targets["wrist_roll.pos"] = targets.get("wrist_roll.pos", 0.0) + roll_dir * joint_speed * dt
 
-            l2 = trigger_value([_L2_TRIGGER_AXIS], _L2_TRIGGER_BUTTONS)
-            r2 = trigger_value([_R2_TRIGGER_AXIS], _R2_TRIGGER_BUTTONS)
-            targets["gripper.pos"] = targets.get("gripper.pos", 0.0) + (r2 - l2) * gripper_speed * dt
+            l2, r2 = read_l2_r2()
+            grip_delta = r2 - l2
+            if abs(grip_delta) < float(args.gripper_deadzone):
+                grip_delta = 0.0
+            targets["gripper.pos"] = targets.get("gripper.pos", 0.0) + grip_delta * gripper_speed * dt
 
             targets["gripper.pos"] = clamp(targets.get("gripper.pos", 0.0), 0.0, 100.0)
             for key, (lo, hi) in deg_bounds.items():
