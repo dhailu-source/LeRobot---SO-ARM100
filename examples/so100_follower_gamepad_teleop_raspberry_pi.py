@@ -232,7 +232,7 @@ def main() -> None:
         """
 SO-100 gamepad teleop (joint space) — Raspberry Pi layout:
   Left stick:   shoulder_pan (X), shoulder_lift (Y)
-  Right stick Y: elbow_flex
+  Right stick X: elbow_flex
   D-pad up/down: wrist_flex
   L1 / R1:      wrist_roll - / +
   L2 / R2:      gripper close / open
