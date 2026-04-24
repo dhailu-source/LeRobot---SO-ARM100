@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-"""SO-100 gamepad teleop tuned for Raspberry Pi + Linux pygame + PS5 DualSense / DS4.
+"""SO-100 gamepad teleop for Raspberry Pi + Linux pygame + PS5 DualSense / DS4.
 
-SDL/Linux can map the same controller two ways: right stick on axes 2,3 and triggers on 4,5
-(USB / gamepad mode), or the opposite (common Bluetooth hid). This script samples axes at
-startup to pick the mapping.
+Controls (see in-game help): left stick shoulders; right stick Y elbow; D-pad Y wrist;
+L1/R1 wrist roll; L2/R2 gripper; Square exits. Axis pairs for sticks/triggers are
+auto-detected (USB vs Bluetooth driver layouts).
 
 For a Windows laptop, use so100_follower_gamepad_teleop.py instead.
 """
@@ -95,6 +95,12 @@ def main() -> None:
         help="Axis map: triggers on 4,5 vs 2,3. Use auto unless detection is wrong.",
     )
     parser.add_argument(
+        "--exit_button",
+        type=int,
+        default=2,
+        help="Button index for Square (exit). Try 2 or 3 if exit does not respond.",
+    )
+    parser.add_argument(
         "--calib_margin_ratio",
         type=float,
         default=0.03,
@@ -142,6 +148,12 @@ def main() -> None:
     joystick = pygame.joystick.Joystick(0)
     joystick.init()
     n_axes = joystick.get_numaxes()
+    if joystick.get_numhats() < 1:
+        raise RuntimeError(
+            "This layout needs a D-pad (joystick hat). Pygame reports 0 hats on this device. "
+            "Try another USB port/cable or check the controller in `jstest` / `evtest`."
+        )
+    wrist_hat_index = 0
 
     def axis_raw(index: int) -> float:
         if index >= n_axes:
@@ -218,13 +230,13 @@ def main() -> None:
 
     print(
         """
-SO-100 gamepad teleop (joint space):
+SO-100 gamepad teleop (joint space) — Raspberry Pi layout:
   Left stick:   shoulder_pan (X), shoulder_lift (Y)
-  Right stick Y: wrist_flex (vertical feels best on DualSense)
-  Right stick X: elbow_flex
+  Right stick Y: elbow_flex
+  D-pad up/down: wrist_flex
   L1 / R1:      wrist_roll - / +
   L2 / R2:      gripper close / open
-  Exit:         Circle/B or Square/Cross (driver-dependent)
+  Square:       exit  (if wrong button exits, try: --exit_button 3)
 """
     )
 
@@ -238,18 +250,18 @@ SO-100 gamepad teleop (joint space):
                 if event.type == pygame.QUIT:
                     return
 
-            if button_pressed([1, 2]):
+            if button_pressed([args.exit_button]):
                 break
 
             lx = axis_value(0, args.deadzone)
             ly = axis_value(1, args.deadzone)
-            rx = axis_value(rs_x, args.deadzone)
             ry = axis_value(rs_y, args.deadzone)
+            _hx, hy = joystick.get_hat(wrist_hat_index)
 
             targets["shoulder_pan.pos"] = targets.get("shoulder_pan.pos", 0.0) + lx * joint_speed * dt
             targets["shoulder_lift.pos"] = targets.get("shoulder_lift.pos", 0.0) - ly * joint_speed * dt
-            targets["wrist_flex.pos"] = targets.get("wrist_flex.pos", 0.0) + ry * joint_speed * dt
-            targets["elbow_flex.pos"] = targets.get("elbow_flex.pos", 0.0) - rx * joint_speed * dt
+            targets["wrist_flex.pos"] = targets.get("wrist_flex.pos", 0.0) + float(hy) * joint_speed * dt
+            targets["elbow_flex.pos"] = targets.get("elbow_flex.pos", 0.0) - ry * joint_speed * dt
 
             roll_dir = 0.0
             if button_pressed([4]):
