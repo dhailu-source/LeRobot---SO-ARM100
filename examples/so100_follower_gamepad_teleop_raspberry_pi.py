@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-"""SO-100 gamepad teleop for Raspberry Pi + Linux pygame + PS5 DualSense / DS4.
+"""Teleoperate an SO-100 follower arm from a Raspberry Pi using pygame and a PlayStation controller.
 
-Controls (see in-game help): left stick shoulders; right stick Y elbow; D-pad Y wrist;
-L1/R1 wrist roll; L2/R2 gripper; Square exits. Axis pairs for sticks/triggers are
-auto-detected (USB vs Bluetooth driver layouts).
+Runs on Linux (typical Pi setup). Pygame reads the gamepad; joint targets are integrated in the
+control loop and sent over serial to the arm. Stick/trigger axis pairs are auto-detected when
+``--layout auto`` so USB and Bluetooth driver layouts both work. Requires ``pip install -e ".[gamepad]"``.
 
-For a Windows laptop, use so100_follower_gamepad_teleop.py instead.
+On Windows, use ``so100_follower_gamepad_teleop.py`` instead. In-game help lists stick and button mapping.
 """
 
 from __future__ import annotations
@@ -64,7 +64,6 @@ def detect_axis_layout(pump, axis_raw, num_axes: int) -> tuple[str, int, int, in
         return "sticks_on_45", 4, 5, 2, 3
     if pair_45_triggers and not pair_23_triggers:
         return "sticks_on_23", 2, 3, 4, 5
-    # Ambiguous: pick whichever pair is more "trigger-like" (more negative average).
     avg23 = (m2 + m3) * 0.5
     avg45 = (m4 + m5) * 0.5
     if avg23 < avg45:
@@ -177,7 +176,6 @@ def main() -> None:
     print(f"Using gamepad: {joystick.get_name()} | layout={layout_name} | axes RS=({rs_x},{rs_y}) L2R2=({l2_ax},{r2_ax})")
     print("Keep fingers off L2/R2 and the right stick for one second while axes are detected.")
 
-    # Resting values for trigger axes (for signed vs unsigned scaling).
     l2_rest_samples: list[float] = []
     r2_rest_samples: list[float] = []
     for _ in range(25):
@@ -189,11 +187,10 @@ def main() -> None:
     r2_rest = statistics.fmean(r2_rest_samples)
 
     def trigger_activation(axis_idx: int, rest: float) -> float:
+        """Map trigger axis to [0, 1]: signed drivers (rest ~ -1) vs unsigned (rest ~ idle high)."""
         raw = axis_raw(axis_idx)
-        # Signed triggers (DualSense): rest ~ -1, full press ~ +1
         if rest < -0.25:
             return (clamp(raw, -1.0, 1.0) + 1.0) * 0.5
-        # Unsigned 0..1: remove idle bias so a noisy rest value does not count as "open".
         span = max(0.2, 1.0 - clamp(rest, 0.0, 0.95))
         return clamp((raw - rest) / span, 0.0, 1.0)
 
